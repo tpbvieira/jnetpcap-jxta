@@ -1,7 +1,9 @@
 package org.jnetpcap.protocol.tcpip;
 
-
+import java.io.IOException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 
 import net.jxta.endpoint.Message;
 import net.jxta.impl.endpoint.msgframing.MessagePackageHeader;
@@ -35,91 +37,97 @@ public class Jxta extends JHeader {
 		DEFAULT
 	}
 
-	/** Constant numerical ID assigned to this protocol. */
+	public enum JxtaState {
+		UNKNOWN,
+		WELCOME,
+		HEADER,
+		MESSAGE
+	}
+
 	public static int ID;
 
-	/** The message type. */
-	private JxtaMessageType jxtaMessageType = null;
+	private JxtaMessageType jxtaMessageType;
 
-	/** Parsed welcome message. */
-	private WelcomeMessage welcomeMsg = null;
+	private WelcomeMessage welcomeMsg;
 
-	/** Parsed header. */
-	private MessagePackageHeader headerMsg = null;
-
-	/** Parsed msg. */
-	private Message contentMsg = null;
-
-	private byte[] rawWelcome = null;
+	private MessagePackageHeader headerMsg;
 	
-	private byte[] rawHeader = null;
-	
-	private byte[] rawContent = null;
-	
+	private byte[] rawHeader;
+
+	private Message message;
+
+	private byte[] jxtaPayload;
+
+	private byte[] remain;
+
+	private boolean isFragmented;
+
+	private JxtaState jxtaState;
+
+	private ArrayList<JPacket> packets;
+
 	static{
 		try {  
 			ID = JRegistry.register(Jxta.class);
 		} catch (Exception e) {//TODO  
 			e.printStackTrace();
-		}  
+		}
 	}
 
-	private static boolean isWelcomeMessage(byte[] bufferArray){
+	public static boolean isWelcomeMessage(byte[] bufferArray){
 		if(bufferArray == null || bufferArray.length < 9)
 			return false;
 
 		boolean ok = true;
-		ok = ok && (bufferArray[0] == 74);
-		ok = ok && (bufferArray[1] == 88);
-		ok = ok && (bufferArray[2] == 84);
-		ok = ok && (bufferArray[3] == 65);
-		ok = ok && (bufferArray[4] == 72);
-		ok = ok && (bufferArray[5] == 69);
-		ok = ok && (bufferArray[6] == 76);
-		ok = ok && (bufferArray[7] == 76);
-		ok = ok && (bufferArray[8] == 79);
+		ok = ok && (bufferArray[0] == 74);// J
+		ok = ok && (bufferArray[1] == 88);// X
+		ok = ok && (bufferArray[2] == 84);// T
+		ok = ok && (bufferArray[3] == 65);// A
+		ok = ok && (bufferArray[4] == 72);// H
+		ok = ok && (bufferArray[5] == 69);// E
+		ok = ok && (bufferArray[6] == 76);// L
+		ok = ok && (bufferArray[7] == 76);// L
+		ok = ok && (bufferArray[8] == 79);// O
 
 		return ok;
 	}
 
-	private static boolean isJxtaHeaderMessage(byte[] bufferArray){
-		if(bufferArray == null || bufferArray.length < 9)
+	public static boolean isJxtaHeaderMessage(byte[] bufferArray){
+		if(bufferArray == null || bufferArray.length < 15)
 			return false;
 
 		boolean ok = true;
-		ok = ok && (bufferArray[0] == 12);
-		ok = ok && (bufferArray[1] == 99);
-		ok = ok && (bufferArray[2] == 111);
-		ok = ok && (bufferArray[3] == 110);
-		ok = ok && (bufferArray[4] == 116);
-		ok = ok && (bufferArray[5] == 101);
-		ok = ok && (bufferArray[6] == 110);
-		ok = ok && (bufferArray[7] == 116);
-		ok = ok && (bufferArray[8] == 45);
-		ok = ok && (bufferArray[9] == 116);
-		ok = ok && (bufferArray[10] == 121);
-		ok = ok && (bufferArray[11] == 112);
-		ok = ok && (bufferArray[12] == 101);
-		ok = ok && (bufferArray[13] == 0);
-		ok = ok && (bufferArray[14] == 22);
-		ok = ok && (bufferArray[15] == 97);
-		ok = ok && (bufferArray[16] == 112);
-		ok = ok && (bufferArray[17] == 112);
-		ok = ok && (bufferArray[18] == 108);
-		ok = ok && (bufferArray[19] == 105);
-		ok = ok && (bufferArray[20] == 99);
-		ok = ok && (bufferArray[21] == 97);
-		ok = ok && (bufferArray[22] == 116);
-		ok = ok && (bufferArray[23] == 105);
-		ok = ok && (bufferArray[24] == 111);
-		ok = ok && (bufferArray[25] == 110);
-		ok = ok && (bufferArray[26] == 47);
-		ok = ok && (bufferArray[27] == 120);
-		ok = ok && (bufferArray[28] == 45);
-		ok = ok && (bufferArray[29] == 106);
-		ok = ok && (bufferArray[30] == 120);
-		ok = ok && (bufferArray[31] == 116);
-		ok = ok && (bufferArray[32] == 97);
+		//		ok = ok && (bufferArray[0] == 12);//	?
+		ok = ok && (bufferArray[1] == 99);//	c
+		ok = ok && (bufferArray[2] == 111);//	o
+		ok = ok && (bufferArray[3] == 110);//	n
+		ok = ok && (bufferArray[4] == 116);//	t
+		ok = ok && (bufferArray[5] == 101);//	e
+		ok = ok && (bufferArray[6] == 110);//	n
+		ok = ok && (bufferArray[7] == 116);//	t
+		ok = ok && (bufferArray[8] == 45);//	-
+		ok = ok && (bufferArray[9] == 108);//	l	
+		ok = ok && (bufferArray[10] == 101);//	e
+		ok = ok && (bufferArray[11] == 110);//	n
+		ok = ok && (bufferArray[12] == 103);//	g
+		ok = ok && (bufferArray[13] == 116);//	t
+		ok = ok && (bufferArray[14] == 104);//	h
+
+		//		 UDP header??
+		//		if(!ok){
+		//			ok = true;
+		//			ok = ok && (bufferArray[0] == 74);// J
+		//			ok = ok && (bufferArray[1] == 88);// X
+		//			ok = ok && (bufferArray[2] == 84);// T
+		//			ok = ok && (bufferArray[3] == 65);// A
+		//			ok = ok && (bufferArray[5] == 99);//	c
+		//			ok = ok && (bufferArray[6] == 111);//	o
+		//			ok = ok && (bufferArray[7] == 110);//	n
+		//			ok = ok && (bufferArray[8] == 116);//	t
+		//			ok = ok && (bufferArray[9] == 101);//	e
+		//			ok = ok && (bufferArray[10] == 110);//	n
+		//			ok = ok && (bufferArray[11] == 116);//	t
+		//		}
 
 		return ok;
 	}
@@ -133,16 +141,15 @@ public class Jxta extends JHeader {
 	@HeaderLength 
 	public static int headerLength(JBuffer buffer, int offset) {
 		int length = 0;
-		byte[] bufferArray = null;
+		byte[] bytes = null;
 
-		if(buffer.size() > (68 + 9)){
-			bufferArray = buffer.getByteArray(68, buffer.size() - 68);//clean message
-			
-			if(isWelcomeMessage(bufferArray)){
-				length = bufferArray.length;
+		if(buffer.size() > (offset + 9)){
+			bytes = buffer.getByteArray(offset, buffer.size() - offset);//jxta message array			
+			if(isWelcomeMessage(bytes)){
+				length = bytes.length;
 			}else				
-				if(isJxtaHeaderMessage(bufferArray)){
-					length = (buffer.findUTF8String(69, 'j','x','m','g') - 3);
+				if(isJxtaHeaderMessage(bytes)){
+					length = (buffer.findUTF8String(offset, 'j','x','m','g') - 4);
 				}
 		}
 		return length;
@@ -151,50 +158,186 @@ public class Jxta extends JHeader {
 	@Bind(to = Tcp.class)  
 	public static boolean bindToTcp(JPacket packet, Tcp tpc) {
 		return true;//TODO put effective verification 
-	}  
+	}
 
+	@Bind(to = Udp.class)  
+	public static boolean bindToUdp(JPacket packet, Udp udp) {
+		return true;//TODO put effective verification 
+	}
+
+	
+	public Jxta(){		
+		rawHeader = new byte[0];
+		jxtaPayload = new byte[0];
+		remain = new byte[0];
+		isFragmented = false;
+		packets = new ArrayList<JPacket>();	
+	}
+	
+	
 	/**
-	 * Decode first line.
+	 * verify and set the message type, using information from first line of bytes.
 	 * 
-	 * @param buffer
+	 * @param bytes
 	 */
-	private void decodeFirstLine(byte[] buffer) {		
-		if (isWelcomeMessage(buffer)) {
+	private void setMessageType(byte[] bytes) {		
+		if (isWelcomeMessage(bytes)) {
 			setJxtaMessageType(JxtaMessageType.WELCOME);
+			setJxtaState(JxtaState.WELCOME);
 		} else 
-			if(isJxtaHeaderMessage(buffer)){
+			if(isJxtaHeaderMessage(bytes)){
 				setJxtaMessageType(JxtaMessageType.DEFAULT);
+				setJxtaState(JxtaState.HEADER);
 			}
 	}
 
 	/**
-	 * Decode the jxta header.
+	 * Decode the JXTA header.
+	 * For cases where does not exists fragmentation
 	 */
 	@Override
 	protected void decodeHeader() {
-		decodeFirstLine(this.getByteArray(0, this.size()));
+		jxtaState = JxtaState.UNKNOWN;
+		setMessageType(this.getByteArray(0, this.size()));		
 
-		if(jxtaMessageType == JxtaMessageType.WELCOME){
-			rawWelcome = this.getByteArray(0, this.size());
-			welcomeMsg = JxtaParser.welcomeParser(ByteBuffer.wrap(rawWelcome));
-		}else
-			if(jxtaMessageType == JxtaMessageType.DEFAULT){
-				rawHeader = this.getByteArray(0, this.size());
-				headerMsg = JxtaParser.headerParser(ByteBuffer.wrap(rawHeader));
-			}
+		try{
+			if(jxtaMessageType == JxtaMessageType.WELCOME){
+				jxtaState = JxtaState.WELCOME;
+				ByteBuffer buffer = ByteBuffer.wrap(this.getByteArray(0, this.size()));
+				int t0 = buffer.position();
+				welcomeMsg = JxtaParser.welcomeParser(buffer);
+				rawHeader = this.getByteArray(0, buffer.position() - t0);
+				jxtaPayload = rawHeader;
+				jxtaState = JxtaState.UNKNOWN;
+			}else
+				if(jxtaMessageType == JxtaMessageType.DEFAULT){
+					jxtaState = JxtaState.HEADER;
+					ByteBuffer buffer = ByteBuffer.wrap(this.getByteArray(0, this.size()));
+					int t0 = buffer.position();
+					headerMsg = JxtaParser.headerParser(buffer);
+					rawHeader = this.getByteArray(0, buffer.position() - t0);
+					jxtaPayload = rawHeader;					
+					jxtaState = JxtaState.MESSAGE;
+				}
+		}catch(IOException e){
+			throw new RuntimeException("Error decondig jxta header",e);
+		}
 	}
 
-	public void decodeMessage(){
+	// for cases where does not exists fragmentation
+	public void decodeMessage() throws IOException{
 		if(jxtaMessageType == null)
 			decodeHeader();
 
+		jxtaState = JxtaState.MESSAGE;
+
 		if(jxtaMessageType == JxtaMessageType.DEFAULT){
-			rawContent = this.getPayload();
-			contentMsg = JxtaParser.processMessage(ByteBuffer.wrap(rawContent),headerMsg);
-		}			
+			ByteBuffer buffer = ByteBuffer.wrap(this.getPayload());
+			
+			// save payload before to process the message
+			jxtaPayload = new byte[rawHeader.length + buffer.remaining()];
+			System.arraycopy(rawHeader, 0, jxtaPayload, 0, rawHeader.length);
+			System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, rawHeader.length, buffer.remaining());
+			
+			int t0 = buffer.position();
+			message = JxtaParser.processMessage(buffer,headerMsg);
+			int msgLen = buffer.position() - t0;
+
+			jxtaPayload = new byte[rawHeader.length + msgLen];
+
+			System.arraycopy(rawHeader, 0, jxtaPayload, 0, rawHeader.length);//copy header into new payload
+			System.arraycopy(buffer.array(), buffer.position() - msgLen, jxtaPayload, rawHeader.length, msgLen);//copy massage into new payload
+
+			isFragmented = (buffer.remaining() > 0);
+			if(isFragmented){
+				jxtaState = JxtaState.HEADER;				
+				remain = new byte[buffer.remaining()];
+				System.arraycopy(buffer.array(), buffer.position(), remain, 0, remain.length);
+			}else{
+				jxtaState = JxtaState.UNKNOWN;
+			}
+		}else{
+			throw new RuntimeException("Incompatible message type");
+		}
 	}
 
-	private void setJxtaMessageType(JxtaMessageType type) {
+	public void decode(ByteBuffer buffer) throws IOException{
+		setMessageType(buffer.array());
+
+		if(jxtaMessageType == JxtaMessageType.WELCOME){			
+			decodeWelcome(buffer);
+		}else
+			if(jxtaMessageType == JxtaMessageType.DEFAULT){
+				if(getJxtaState() == JxtaState.HEADER)
+					decodeHeader(buffer);
+				else
+					buffer.position(rawHeader.length);// puts the buffer position after the header
+				decodeMessage(buffer);
+			}
+	}
+
+	private void decodeWelcome(ByteBuffer buffer) throws IOException{
+		welcomeMsg = null;		
+		jxtaState = JxtaState.WELCOME;
+		
+		// save before
+		jxtaPayload = new byte[buffer.remaining()];
+		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, buffer.remaining());		
+		
+		int t0 = buffer.position();
+		welcomeMsg = JxtaParser.welcomeParser(buffer);
+		jxtaPayload = new byte[buffer.position() - t0];
+		
+		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, jxtaPayload.length);
+		rawHeader = jxtaPayload;
+		jxtaState = JxtaState.UNKNOWN;
+	}
+
+	public void decodeHeader(ByteBuffer buffer) throws IOException{
+		// Header
+		headerMsg = null;
+		jxtaState = JxtaState.HEADER;		
+		
+		// save before
+		jxtaPayload = new byte[buffer.remaining()];
+		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, buffer.remaining());
+		
+		int t0 = buffer.position();
+		headerMsg = JxtaParser.headerParser(buffer);		
+		rawHeader = new byte[buffer.position() - t0];
+		
+		System.arraycopy(buffer.array(), buffer.position() - rawHeader.length, rawHeader, 0,rawHeader.length);		
+		jxtaPayload = rawHeader;
+		jxtaState = JxtaState.MESSAGE;
+	}
+
+	public void decodeMessage(ByteBuffer buffer) throws IOException{
+		// Message		
+		jxtaState = JxtaState.MESSAGE;
+		
+		jxtaPayload = new byte[rawHeader.length + buffer.remaining()];// resizes payload
+		System.arraycopy(rawHeader, 0, jxtaPayload, 0, rawHeader.length);//copy header into payload
+		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, rawHeader.length, buffer.remaining());//copy massage into payload
+		
+		int p0 = buffer.position();				
+		message = JxtaParser.processMessage(buffer,headerMsg);
+		int msgLen = buffer.position() - p0;
+
+		jxtaPayload = new byte[rawHeader.length + msgLen];// resizes payload
+		System.arraycopy(rawHeader, 0, jxtaPayload, 0, rawHeader.length);//copy header into payload
+		System.arraycopy(buffer.array(), buffer.position() - msgLen, jxtaPayload, rawHeader.length, msgLen);//copy massage into payload
+
+		isFragmented = (buffer.remaining() > 0);
+		if(isFragmented){
+			jxtaState = JxtaState.HEADER;			
+			remain = new byte[buffer.remaining()];
+			System.arraycopy(buffer.array(), buffer.position(), remain, 0, remain.length);
+		}else{
+			jxtaState = JxtaState.UNKNOWN;
+		}
+	}
+
+	public void setJxtaMessageType(JxtaMessageType type) {
 		this.jxtaMessageType = type;
 	}
 
@@ -210,20 +353,66 @@ public class Jxta extends JHeader {
 		return headerMsg;
 	}
 
-	public Message getContentMessage() {
-		return contentMsg;
+	public Message getMessage() {
+		return message;
 	}
 
-	public byte[] getRawWelcome() {
-		return rawWelcome;
+	public void setMessage(Message msg) {
+		message = msg;
 	}
 
-	public byte[] getRawHeader() {
-		return rawHeader;
+	public boolean isFragmented() {
+		return isFragmented;
 	}
 
-	public byte[] getRawContent() {
-		return rawContent;
+	public void setFragmented(boolean isFragmented) {
+		this.isFragmented = isFragmented;
 	}
 
+	public JxtaState getJxtaState() {
+		return jxtaState;
+	}
+
+	public void setJxtaState(JxtaState jxtaState) {
+		this.jxtaState = jxtaState;
+	}
+
+	public byte[] getRemain() {
+		return remain;
+	}
+
+	public void setRemain(byte[] remain) {
+		this.remain = remain;
+	}
+
+	public WelcomeMessage getWelcomeMsg() {
+		return welcomeMsg;
+	}
+
+	public void setWelcomeMsg(WelcomeMessage welcomeMsg) {
+		this.welcomeMsg = welcomeMsg;
+	}
+
+	public MessagePackageHeader getHeaderMsg() {
+		return headerMsg;
+	}
+
+	public void setHeaderMsg(MessagePackageHeader headerMsg) {
+		this.headerMsg = headerMsg;
+	}
+
+	public byte[] getJxtaPayload() {
+		return jxtaPayload;
+	}
+
+	public void setJxtaPayload(byte[] payload) throws BufferUnderflowException, IOException {
+		this.jxtaPayload = payload;
+		ByteBuffer buffer = ByteBuffer.wrap(payload);
+		decodeHeader(buffer);
+		decodeMessage(buffer);
+	}
+
+	public ArrayList<JPacket> getPackets() {
+		return packets;
+	}
 }

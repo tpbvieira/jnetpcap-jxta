@@ -1,4 +1,7 @@
 .classpath
 .project
+hs_err_pid5670.log
 .settings/
 target/
+MySimpleClient/
+MySocketServer/
