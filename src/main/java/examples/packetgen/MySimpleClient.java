@@ -93,8 +93,7 @@ public class MySimpleClient {
 			long finish = System.currentTimeMillis();
 			long elapsed = finish - start;
 
-			System.out.println(MessageFormat.format("### {0} bytes in {1} ms. Throughput = {2} KB/sec.", size, elapsed,(size / elapsed) * 1000 / 1024));
-			
+			System.out.println(MessageFormat.format("### {0} bytes in {1} ms. Throughput = {2} KB/sec.", size, elapsed,(size / elapsed) * 1000 / 1024));			
 			socket.close();
 			System.out.println("### Socket connection closed");
 			

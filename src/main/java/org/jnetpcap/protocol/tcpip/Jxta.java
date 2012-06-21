@@ -3,12 +3,16 @@ package org.jnetpcap.protocol.tcpip;
 import java.io.IOException;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 import net.jxta.endpoint.Message;
 import net.jxta.impl.endpoint.msgframing.MessagePackageHeader;
 import net.jxta.impl.endpoint.msgframing.WelcomeMessage;
 import net.jxta.parser.JxtaParser;
+import net.jxta.parser.exceptions.JxtaBodyParserException;
+import net.jxta.parser.exceptions.JxtaHeaderParserException;
+import net.jxta.parser.exceptions.JxtaWelcomeParserException;
 
 import org.jnetpcap.nio.JBuffer;
 import org.jnetpcap.packet.JHeader;
@@ -64,7 +68,7 @@ public class Jxta extends JHeader {
 
 	private JxtaState jxtaState;
 
-	private ArrayList<JPacket> packets;
+	private SortedMap<Long,JPacket> packets;
 
 	static{
 		try {  
@@ -171,7 +175,7 @@ public class Jxta extends JHeader {
 		jxtaPayload = new byte[0];
 		remain = new byte[0];
 		isFragmented = false;
-		packets = new ArrayList<JPacket>();	
+		packets = new TreeMap<Long,JPacket>();	
 	}
 	
 	
@@ -219,8 +223,12 @@ public class Jxta extends JHeader {
 					jxtaPayload = rawHeader;					
 					jxtaState = JxtaState.MESSAGE;
 				}
+		}catch(JxtaWelcomeParserException e){
+			throw new RuntimeException("Error decondig jxta welcome message", new JxtaWelcomeParserException(e));
+		}catch(JxtaHeaderParserException e){
+			throw new RuntimeException("Error decondig jxta header message", new JxtaHeaderParserException(e));
 		}catch(IOException e){
-			throw new RuntimeException("Error decondig jxta header",e);
+			throw new RuntimeException("RuntimeError decondig jxta header message", new JxtaHeaderParserException(e));
 		}
 	}
 
@@ -240,7 +248,11 @@ public class Jxta extends JHeader {
 			System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, rawHeader.length, buffer.remaining());
 			
 			int t0 = buffer.position();
-			message = JxtaParser.processMessage(buffer,headerMsg);
+			try {
+				message = JxtaParser.processMessage(buffer,headerMsg);
+			} catch (JxtaBodyParserException e) {
+				throw new RuntimeException("Error decondig jxta body message", new JxtaBodyParserException(e));
+			}
 			int msgLen = buffer.position() - t0;
 
 			jxtaPayload = new byte[rawHeader.length + msgLen];
@@ -261,6 +273,11 @@ public class Jxta extends JHeader {
 		}
 	}
 
+	public void decode(long seqNumber, JPacket packet, ByteBuffer buffer) throws IOException{		
+		decode(buffer);
+		packets.put(seqNumber, packet);
+	}
+	
 	public void decode(ByteBuffer buffer) throws IOException{
 		setMessageType(buffer.array());
 
@@ -285,7 +302,11 @@ public class Jxta extends JHeader {
 		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, buffer.remaining());		
 		
 		int t0 = buffer.position();
-		welcomeMsg = JxtaParser.welcomeParser(buffer);
+		try {
+			welcomeMsg = JxtaParser.welcomeParser(buffer);
+		} catch (JxtaWelcomeParserException e) {
+			throw new RuntimeException("Error decondig jxta welcome message", new JxtaWelcomeParserException(e));
+		}
 		jxtaPayload = new byte[buffer.position() - t0];
 		
 		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, jxtaPayload.length);
@@ -303,7 +324,11 @@ public class Jxta extends JHeader {
 		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, buffer.remaining());
 		
 		int t0 = buffer.position();
-		headerMsg = JxtaParser.headerParser(buffer);		
+		try {
+			headerMsg = JxtaParser.headerParser(buffer);
+		} catch (JxtaHeaderParserException e) {
+			throw new RuntimeException("Error decondig jxta header message", new JxtaHeaderParserException(e));
+		}		
 		rawHeader = new byte[buffer.position() - t0];
 		
 		System.arraycopy(buffer.array(), buffer.position() - rawHeader.length, rawHeader, 0,rawHeader.length);		
@@ -320,7 +345,11 @@ public class Jxta extends JHeader {
 		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, rawHeader.length, buffer.remaining());//copy massage into payload
 		
 		int p0 = buffer.position();				
-		message = JxtaParser.processMessage(buffer,headerMsg);
+		try {
+			message = JxtaParser.processMessage(buffer,headerMsg);
+		} catch (JxtaBodyParserException e) {
+			throw new RuntimeException("Error decondig jxta body message", new JxtaBodyParserException(e));
+		}
 		int msgLen = buffer.position() - p0;
 
 		jxtaPayload = new byte[rawHeader.length + msgLen];// resizes payload
@@ -412,7 +441,7 @@ public class Jxta extends JHeader {
 		decodeMessage(buffer);
 	}
 
-	public ArrayList<JPacket> getPackets() {
+	public SortedMap<Long,JPacket> getJxtaPackets() {
 		return packets;
 	}
 }

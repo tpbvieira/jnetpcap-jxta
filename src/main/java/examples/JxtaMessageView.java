@@ -5,14 +5,19 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Set;
+import java.util.SortedMap;
 
+import net.jxta.document.AdvertisementFactory;
+import net.jxta.document.StructuredDocumentFactory;
+import net.jxta.document.XMLDocument;
 import net.jxta.endpoint.Message;
 import net.jxta.endpoint.Message.ElementIterator;
 import net.jxta.endpoint.MessageElement;
 import net.jxta.impl.endpoint.router.EndpointRouterMessage;
+import net.jxta.protocol.PipeAdvertisement;
 
 import org.jnetpcap.Pcap;
 import org.jnetpcap.packet.JPacket;
@@ -20,18 +25,28 @@ import org.jnetpcap.packet.JPacketHandler;
 import org.jnetpcap.protocol.network.Ip4;
 import org.jnetpcap.protocol.tcpip.Jxta;
 import org.jnetpcap.protocol.tcpip.Jxta.JxtaMessageType;
+import org.jnetpcap.protocol.tcpip.JxtaUtils;
 import org.jnetpcap.protocol.tcpip.Tcp;
 
 public class JxtaMessageView {
 
-	public static HashMap<Integer,Jxta> frags = new HashMap<Integer,Jxta>();
-
 	public static void main(String[] args) {
-//		final String FILENAME = "/home/thiago/tmp/pcap-traces/jxta-socket/simpleSocket/1/1.1.1/1.1.1.pcap";
-		final String FILENAME = "/home/thiago/tmp/pcap-traces/jxta-socket/simpleSocket/1024/1.1.1024/1.1.1024.pcap";
-
+		long t0,t1;
+		final String FILENAME = "/home/thiago/tmp/_/captura.pcap";
 		final StringBuilder errbuf = new StringBuilder();
+		t0 = System.currentTimeMillis();
 		final Pcap pcap = Pcap.openOffline(FILENAME, errbuf);
+		HashMap<Integer,Jxta> frags = generateFullSocketFlows(errbuf, pcap);
+		pcap.close();
+		t1 = System.currentTimeMillis();
+		
+		System.out.println("\n### " + frags.size() + " JXTA reassembly error");
+		System.out.println("### Time: " + (t1-t0));
+	}
+
+	public static HashMap<Integer,Jxta> generateFullSocketFlows(final StringBuilder errbuf, final Pcap pcap) {
+
+		final HashMap<Integer,Jxta> frags = new HashMap<Integer,Jxta>();
 
 		pcap.loop(Pcap.LOOP_INFINITE, new JPacketHandler<StringBuilder>() {					
 
@@ -42,6 +57,7 @@ public class JxtaMessageView {
 
 				if(packet.hasHeader(Tcp.ID)){
 					packet.getHeader(tcp);
+					long seqNumber = tcp.seq();
 
 					// Looking for tcp fragmentation 
 					if(frags.size() > 0 && tcp.getPayloadLength() > 0){
@@ -51,9 +67,9 @@ public class JxtaMessageView {
 						packet.getHeader(ip);
 
 						// id = IP and port of source and destiny
-						int[] id = getFlowId(ip,tcp);
-						jxta = frags.get(Arrays.hashCode(id));
-						
+						int id = JxtaUtils.getFlowId(ip,tcp);
+						jxta = frags.get(id);
+
 						if(jxta != null){
 							// writes actual payload into last payload
 							ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -63,48 +79,44 @@ public class JxtaMessageView {
 							System.out.println("## Buffer = " + bb.array().length);
 							try{
 								jxta.decode(bb);
-								if(frags.remove(Arrays.hashCode(id)) == null){
+								if(frags.remove(id) == null){
 									throw new RuntimeException("### Error: Flow id not found");
 								}
-								tcpFlagsPrettyPrint(tcp);
 								messagePrettyPrint(jxta);	
 
 								if(bb.hasRemaining()){// if there are bytes, tries parser a full message with it									
 									System.out.println("### There are still bytes: " + bb.remaining());									
 									try{
-										packet.hasHeader(tcp);
 										byte[] resto = new byte[bb.remaining()];
 										bb.get(resto, 0, bb.remaining());
 										jxta.decode(ByteBuffer.wrap(resto));
-										messagePrettyPrint(jxta);										
-										tcpFlagsPrettyPrint(tcp);									
+										messagePrettyPrint(jxta);									
 									}catch(BufferUnderflowException e ){
-										ArrayList<JPacket> packets = jxta.getPackets();
+										SortedMap<Long,JPacket> packets = jxta.getJxtaPackets();
 										packets.clear();
-										packets.add(packet);
-										frags.put(Arrays.hashCode(id),jxta);
-										System.out.println("### Queued again... " + Arrays.hashCode(id));										
+										packets.put(seqNumber,packet);
+										frags.put(id,jxta);
+										System.out.println("### Queued again... " + id);										
 									}catch (IOException failed) {
-										ArrayList<JPacket> packets = jxta.getPackets();
+										SortedMap<Long,JPacket> packets = jxta.getJxtaPackets();
 										packets.clear();
-										packets.add(packet);
-										frags.put(Arrays.hashCode(id),jxta);
-										System.out.println("### Queued again... " + Arrays.hashCode(id));
+										packets.put(seqNumber,packet);
+										frags.put(id,jxta);
+										System.out.println("### Queued again... " + id);
 									}catch (Exception e) {
 										System.out.println("### Erro inesperado");
 										e.printStackTrace();
 									}
-
 									return;
 								}															
 							}catch(BufferUnderflowException e ){								
-								jxta.getPackets().add(packet);
-								frags.put(Arrays.hashCode(id), jxta);
-								System.out.println("### Fragmented updated " + Arrays.hashCode(id));
+								jxta.getJxtaPackets().put(seqNumber,packet);
+								frags.put(id, jxta);
+								System.out.println("### Fragmented updated " + id);
 							}catch (IOException failed) {
-								jxta.getPackets().add(packet);
-								frags.put(Arrays.hashCode(id), jxta);
-								System.out.println("### Fragmented updated " + Arrays.hashCode(id));
+								jxta.getJxtaPackets().put(seqNumber,packet);
+								frags.put(id, jxta);
+								System.out.println("### Fragmented updated " + id);
 							}
 							return;
 						}
@@ -119,28 +131,25 @@ public class JxtaMessageView {
 							try{									
 								jxta.decodeMessage();								
 								messagePrettyPrint(jxta);
-
 								if(jxta.isFragmented()){
 									jxta.decode(ByteBuffer.wrap(jxta.getRemain()));
 								}
 							}catch(BufferUnderflowException e ){								
 								Ip4 ip = new Ip4();
 								packet.getHeader(ip);
-								int[] id = getFlowId(ip,tcp);								
+								int id = JxtaUtils.getFlowId(ip,tcp);								
 								jxta.setFragmented(true);
-								jxta.getPackets().add(packet);
-								frags.put(Arrays.hashCode(id),jxta);
-								System.out.println("## Queued " + Arrays.hashCode(id));
-								tcpFlagsPrettyPrint(tcp);
+								jxta.getJxtaPackets().put(seqNumber,packet);
+								frags.put(id,jxta);
+								System.out.println("## Queued " + id);
 							}catch(IOException e){
 								Ip4 ip = new Ip4();
 								packet.getHeader(ip);
-								int[] id = getFlowId(ip,tcp);	
+								int id = JxtaUtils.getFlowId(ip,tcp);	
 								jxta.setFragmented(true);
-								jxta.getPackets().add(packet);
-								frags.put(Arrays.hashCode(id),jxta);
-								System.out.println("## Queued " + Arrays.hashCode(id));
-								tcpFlagsPrettyPrint(tcp);
+								jxta.getJxtaPackets().put(seqNumber,packet);
+								frags.put(id,jxta);
+								System.out.println("## Queued " + id);
 							}
 						}else
 							if(jxta.getJxtaMessageType() == JxtaMessageType.WELCOME){
@@ -156,56 +165,39 @@ public class JxtaMessageView {
 
 		}, errbuf);
 
-		System.out.println("\n### " + frags.size() + " JXTA reassembly error");
+		return frags;
+
 	}
 
-	public static int[] getFlowId(Ip4 ip, Tcp tcp) {
-		int[] id = new int[10];
-		byte[] src = ip.source();
-		byte[] dst = ip.destination();						
-		id[0] = src[0];
-		id[1] = src[1];
-		id[2] = src[2];
-		id[3] = src[3];
-		id[4] = tcp.source();
-		id[5] = dst[0];
-		id[6] = dst[1];
-		id[7] = dst[2];
-		id[8] = dst[3];
-		id[9] = tcp.destination();
-		return id;
-	}
-
-	public static void tcpFlagsPrettyPrint(Tcp tcp) {
-		//				System.out.println("## Psh: " + tcp.flags_PSH());
-		//				System.out.println("## Ack: " + tcp.flags_ACK());
-		//				System.out.println("## Seq: " + tcp.seq());
-		//				System.out.println("## Nxt: " + tcp.ack());
-	}
-	
-	private static void welcomePrettyPrint(Jxta jxta){
+	public static void welcomePrettyPrint(Jxta jxta){
 		System.out.println("### Welcome");
 		System.out.println(new String(jxta.getJxtaPayload()));
 	}
 
+	@SuppressWarnings("rawtypes")
 	public static void messagePrettyPrint(Jxta jxta){
 		Message msg = jxta.getMessage();
 		System.out.println("\n### Message");
-		ArrayList<JPacket> pkts = jxta.getPackets();
+		double tmp = 0, t0 = Long.MAX_VALUE, t1 = Long.MIN_VALUE;
+
+		SortedMap<Long,JPacket> pkts = jxta.getJxtaPackets();
 		if(pkts != null && pkts.size() > 0){
 			System.out.print("### Reassembled with:");
-			for (JPacket pkt : pkts) {
+			Set<Long> keys = pkts.keySet();
+			for (Long key : keys) {				
+				JPacket pkt = pkts.get(key);
+				tmp = pkt.getCaptureHeader().timestampInMillis();				
+				if(tmp < t0)
+					t0 = tmp;				
+				if(tmp > t1)
+					t1 = tmp;
 				System.out.print(" " + pkt.getFrameNumber());
 			}
 			System.out.println();
-		}				
-		
-//		 Namespaces		
-//		Iterator<String> it = msg.getMessageNamespaces();
-//		while(it.hasNext()){
-//			System.out.println(it.next());
-//		}
-		
+		}else{
+			t0 = t1 = jxta.getPacket().getCaptureHeader().timestampInMillis();
+		}
+
 		// Source and Destination
 		EndpointRouterMessage erm = new EndpointRouterMessage(msg,false);
 		System.out.println("### From: " + erm.getSrcAddress());
@@ -213,9 +205,12 @@ public class JxtaMessageView {
 
 		// Elements
 		ElementIterator elements = msg.getMessageElements();
+		System.out.println(">>> "  + msg.getMessageElement("EndpointSourceAddress"));
+		System.out.println(">>> "  + msg.getMessageElement("EndpointDestinationAddress"));
 		while(elements.hasNext()){
-			MessageElement elem = elements.next();	
-			System.out.println("ElementName=" + elem.getElementName());			
+			MessageElement elem = elements.next();
+
+			System.out.println("[" + elem.getElementName() + "], [" + elem.getMimeType() + "]");			
 			if(elem.getElementName().equals("ack")){
 				int sackCount = ((int) elem.getByteLength() / 4) - 1;
 				try {
@@ -238,6 +233,25 @@ public class JxtaMessageView {
 					e.printStackTrace();
 				}
 			}
+			
+			if(elem.getElementName().equals("reqPipe")){				
+				try {
+					XMLDocument adv = (XMLDocument) StructuredDocumentFactory.newStructuredDocument(elem);
+					PipeAdvertisement pipeAdv = (PipeAdvertisement) AdvertisementFactory.newAdvertisement(adv);					
+					System.out.println("### reqPipeId = " + pipeAdv.getID());
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				
+			}
 		}
+
+		// Indicators
+		System.out.println("### TCP Payload: " + jxta.getJxtaPayload().length);		
+		System.out.println("### JXTA Payload: " + JxtaUtils.getMessageContent(jxta).length);
+		System.out.println("### Transfer Time: " + (t1 - t0));
+		System.out.println("### T0: " + t0);
+		System.out.println("### T1: " + t1);
 	}
+
 }
