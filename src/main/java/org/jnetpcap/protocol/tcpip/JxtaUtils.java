@@ -10,7 +10,8 @@ import net.jxta.impl.util.pipe.reliable.Defs;
 
 import org.jnetpcap.protocol.network.Ip4;
 
-import examples.JxtaMessageView;
+import drivers.JxtaMessageViewDriver;
+
 
 import sun.misc.IOUtils;
 
@@ -58,7 +59,7 @@ public class JxtaUtils {
 
 	public static void flowPrettyPrint(ArrayList<Jxta> flow){
 		for (Jxta jxta : flow) {
-			JxtaMessageView.messagePrettyPrint(jxta);
+			JxtaMessageViewDriver.messagePrettyPrint(jxta);
 		}
 	}
 
