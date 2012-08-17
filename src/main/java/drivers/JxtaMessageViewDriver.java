@@ -17,6 +17,7 @@ import net.jxta.endpoint.Message;
 import net.jxta.endpoint.Message.ElementIterator;
 import net.jxta.endpoint.MessageElement;
 import net.jxta.impl.endpoint.router.EndpointRouterMessage;
+import net.jxta.parser.exceptions.JxtaHeaderParserException;
 import net.jxta.protocol.PipeAdvertisement;
 
 import org.jnetpcap.Pcap;
@@ -125,6 +126,13 @@ public class JxtaMessageViewDriver {
 								frags.put(id, jxta);
 								System.out.println("### Fragmented updated " + id);
 							}
+							catch(JxtaHeaderParserException e ){								
+								jxta.getJxtaPackets().put(seqNumber,packet);
+								frags.put(id, jxta);
+								System.out.println("### Fragmented updated " + id);
+							}catch (Exception failed) {
+								failed.printStackTrace();
+							}
 							return;
 						}
 					}
@@ -150,6 +158,14 @@ public class JxtaMessageViewDriver {
 								frags.put(id,jxta);
 								System.out.println("## Queued " + id);
 							}catch(IOException e){
+								Ip4 ip = new Ip4();
+								packet.getHeader(ip);
+								int id = JxtaUtils.getFlowId(ip,tcp);	
+								jxta.setFragmented(true);
+								jxta.getJxtaPackets().put(seqNumber,packet);
+								frags.put(id,jxta);
+								System.out.println("## Queued " + id);
+							}catch(JxtaHeaderParserException e){
 								Ip4 ip = new Ip4();
 								packet.getHeader(ip);
 								int id = JxtaUtils.getFlowId(ip,tcp);	

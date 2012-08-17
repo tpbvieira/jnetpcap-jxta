@@ -55,7 +55,7 @@ public class Jxta extends JHeader {
 	private WelcomeMessage welcomeMsg;
 
 	private MessagePackageHeader headerMsg;
-	
+
 	private byte[] rawHeader;
 
 	private Message message;
@@ -169,7 +169,7 @@ public class Jxta extends JHeader {
 		return true;//TODO put effective verification 
 	}
 
-	
+
 	public Jxta(){		
 		rawHeader = new byte[0];
 		jxtaPayload = new byte[0];
@@ -177,8 +177,8 @@ public class Jxta extends JHeader {
 		isFragmented = false;
 		packets = new TreeMap<Long,JPacket>();	
 	}
-	
-	
+
+
 	/**
 	 * verify and set the message type, using information from first line of bytes.
 	 * 
@@ -241,12 +241,12 @@ public class Jxta extends JHeader {
 
 		if(jxtaMessageType == JxtaMessageType.DEFAULT){
 			ByteBuffer buffer = ByteBuffer.wrap(this.getPayload());
-			
+
 			// save payload before to process the message
 			jxtaPayload = new byte[rawHeader.length + buffer.remaining()];
 			System.arraycopy(rawHeader, 0, jxtaPayload, 0, rawHeader.length);
 			System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, rawHeader.length, buffer.remaining());
-			
+
 			int t0 = buffer.position();
 			try {
 				message = JxtaParser.processMessage(buffer,headerMsg);
@@ -273,12 +273,12 @@ public class Jxta extends JHeader {
 		}
 	}
 
-	public void decode(long seqNumber, JPacket packet, ByteBuffer buffer) throws IOException{		
+	public void decode(long seqNumber, JPacket packet, ByteBuffer buffer) throws IOException, JxtaHeaderParserException{		
 		decode(buffer);
 		packets.put(seqNumber, packet);
 	}
-	
-	public void decode(ByteBuffer buffer) throws IOException{
+
+	public void decode(ByteBuffer buffer) throws IOException, JxtaHeaderParserException{
 		setMessageType(buffer.array());
 
 		if(jxtaMessageType == JxtaMessageType.WELCOME){			
@@ -290,17 +290,23 @@ public class Jxta extends JHeader {
 				else
 					buffer.position(rawHeader.length);// puts the buffer position after the header
 				decodeMessage(buffer);
-			}
+			}else
+				if(jxtaMessageType == null && buffer.array().length < 9){
+					jxtaMessageType = JxtaMessageType.DEFAULT;
+					jxtaState = JxtaState.HEADER;
+					decodeHeader(buffer);
+				}
+
 	}
 
 	private void decodeWelcome(ByteBuffer buffer) throws IOException{
 		welcomeMsg = null;		
 		jxtaState = JxtaState.WELCOME;
-		
+
 		// save before
 		jxtaPayload = new byte[buffer.remaining()];
 		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, buffer.remaining());		
-		
+
 		int t0 = buffer.position();
 		try {
 			welcomeMsg = JxtaParser.welcomeParser(buffer);
@@ -308,29 +314,26 @@ public class Jxta extends JHeader {
 			throw new RuntimeException("Error decondig jxta welcome message", new JxtaWelcomeParserException(e));
 		}
 		jxtaPayload = new byte[buffer.position() - t0];
-		
+
 		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, jxtaPayload.length);
 		rawHeader = jxtaPayload;
 		jxtaState = JxtaState.UNKNOWN;
 	}
 
-	public void decodeHeader(ByteBuffer buffer) throws IOException{
+	public void decodeHeader(ByteBuffer buffer) throws IOException,JxtaHeaderParserException{
 		// Header
 		headerMsg = null;
 		jxtaState = JxtaState.HEADER;		
-		
+
 		// save before
 		jxtaPayload = new byte[buffer.remaining()];
 		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, 0, buffer.remaining());
-		
+
 		int t0 = buffer.position();
-		try {
-			headerMsg = JxtaParser.headerParser(buffer);
-		} catch (JxtaHeaderParserException e) {
-			throw new RuntimeException("Error decondig jxta header message", new JxtaHeaderParserException(e));
-		}		
+
+		headerMsg = JxtaParser.headerParser(buffer);
 		rawHeader = new byte[buffer.position() - t0];
-		
+
 		System.arraycopy(buffer.array(), buffer.position() - rawHeader.length, rawHeader, 0,rawHeader.length);		
 		jxtaPayload = rawHeader;
 		jxtaState = JxtaState.MESSAGE;
@@ -339,11 +342,11 @@ public class Jxta extends JHeader {
 	public void decodeMessage(ByteBuffer buffer) throws IOException{
 		// Message		
 		jxtaState = JxtaState.MESSAGE;
-		
+
 		jxtaPayload = new byte[rawHeader.length + buffer.remaining()];// resizes payload
 		System.arraycopy(rawHeader, 0, jxtaPayload, 0, rawHeader.length);//copy header into payload
 		System.arraycopy(buffer.array(), buffer.position(), jxtaPayload, rawHeader.length, buffer.remaining());//copy massage into payload
-		
+
 		int p0 = buffer.position();				
 		try {
 			message = JxtaParser.processMessage(buffer,headerMsg);
@@ -434,7 +437,7 @@ public class Jxta extends JHeader {
 		return jxtaPayload;
 	}
 
-	public void setJxtaPayload(byte[] payload) throws BufferUnderflowException, IOException {
+	public void setJxtaPayload(byte[] payload) throws BufferUnderflowException, IOException, JxtaHeaderParserException {
 		this.jxtaPayload = payload;
 		ByteBuffer buffer = ByteBuffer.wrap(payload);
 		decodeHeader(buffer);
