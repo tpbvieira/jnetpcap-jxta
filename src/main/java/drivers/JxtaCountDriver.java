@@ -21,28 +21,28 @@ import org.jnetpcap.protocol.tcpip.Tcp;
  */
 
 public class JxtaCountDriver {
-	
+
 	public static HashMap<Long,Jxta> tcpFrags = new HashMap<Long,Jxta>();
 	private static float frames = 0;
 	private static float size = 0;
-	private static float jxtaFrames = 0;
+	private static float jxtaMessages = 0;
 	private static float jxtaPayload = 0;
 	private static float tcpPayload = 0;
-	
+
 	public static void main(String[] args) {
 		System.out.println("### JxtaCounts ###\n" );
-		
-		String fileName = "/home/thiago/tmp/_/server.5.5000.256.3.pcap";
-		
+
+		String fileName = "/home/thiago/tmp/_/128_server.1000.1.256.pcap";
+
 		if(args != null && args.length > 0){
 			fileName = args[0];
 		}
-		
+
 		final StringBuilder errbuf = new StringBuilder();
 		final Pcap pcap = Pcap.openOffline(fileName, errbuf);
-		
+
 		long t0 = System.currentTimeMillis();
-		
+
 		pcap.loop(Pcap.LOOP_INFINITE, new JPacketHandler<StringBuilder>() {
 
 			Tcp tcp = new Tcp();
@@ -50,24 +50,26 @@ public class JxtaCountDriver {
 
 			public void nextPacket(JPacket packet, StringBuilder errbuf) {
 				frames++;
-				size+=packet.getTotalSize();
+				size += packet.getPacketWirelen();
+				
 				boolean handled = false;
 
 				if(packet.hasHeader(Tcp.ID)){
 					packet.getHeader(tcp);
-
+					tcpPayload += tcp.getPayloadLength();
+					
 					// Looking for tcp fragmentation 
 					if(tcp.getPayloadLength() > 0 && tcpFrags.size() > 0){
 						long frameNum = -1;
-						
+
 						for (Long id : tcpFrags.keySet()) {							
 							Jxta frag = tcpFrags.get(id);							
-							
+
 							int headerLen = (int)frag.getHeaderMsg().getContentLengthHeader();
 							byte[] tmp = frag.getJxtaPayload();
 							byte[] rawMsg = new byte[tmp.length - headerLen];
 							System.arraycopy(tmp, headerLen, rawMsg, 0, tmp.length - headerLen);
-							
+
 							byte[] pay = tcp.getPayload();
 							byte[] buf = new byte[rawMsg.length + pay.length];
 
@@ -78,7 +80,7 @@ public class JxtaCountDriver {
 								JxtaParser.processMessage(ByteBuffer.wrap(buf),jxta.getHeaderMessage());								
 								frameNum = id.longValue();
 								handled = true;
-								jxtaFrames++;
+								jxtaMessages++;
 								jxtaPayload+=pay.length;
 								break;
 							}catch(Exception e){
@@ -91,7 +93,7 @@ public class JxtaCountDriver {
 
 					if (!handled && packet.hasHeader(Jxta.ID)) {
 						packet.getHeader(jxta);
-						jxtaFrames++;
+						jxtaMessages++;
 
 						if(jxta.getJxtaMessageType() == JxtaMessageType.WELCOME){
 							jxtaPayload+=jxta.getPayloadLength();
@@ -103,28 +105,28 @@ public class JxtaCountDriver {
 									tcpFrags.put(new Long(packet.getFrameNumber()),jxta);
 								}
 							}
-					}else{
-						tcpPayload += tcp.getPayloadLength();
 					}
-
 				}			
-				
+
 			}			
-			
+
 		}, errbuf);
-		
+
 		long t1 = System.currentTimeMillis();
 		float seconds = (t1 - t0);
-		System.out.println("### " + seconds + " miliseconds to process" );
+		System.out.println("### " + seconds + " ms to process" );
 		System.out.println("### " + tcpFrags.size() + " JXTA reassembly error");
 		System.out.println("### " + frames + " frames");
-		System.out.println("### " + (size/8)/1024 + " KB total");
-		System.out.println("### " + jxtaPayload/1024 + " KB jxtaPayload");
-		System.out.println("### " + tcpPayload/1024 + " KB tcpPayload");
+		System.out.println("### " + (size)/1024 + " KB total");
+		System.out.println("### " + (size*8)/1024 + " Kb total");
+		System.out.println("### " + ((size*8)/1024)/1024 + " Mb total");
+		System.out.println("### " + (jxtaPayload)/1024 + " KB jxtaPayload");
+		System.out.println("### " + (tcpPayload)/1024 + " KB tcpPayload");
 		System.out.println();
-		System.out.println("### " + Float.valueOf(frames/seconds) + " frames/milisec" );
-		System.out.println("### " + Float.valueOf(jxtaFrames/seconds) + " JxtaMsg/milisec" );
-		System.out.println("### " + Float.valueOf((((size/8)/1024)/1024)/seconds) + " MB/milisec" );
+		System.out.println("### " + Float.valueOf(frames/seconds) + " frames/ms" );
+		System.out.println("### " + Float.valueOf(jxtaMessages/seconds) + " JxtaMsg/ms" );
+		System.out.println("### " + Float.valueOf((((size)/1024)/1024)/seconds) + " MB/ms" );
+		System.out.println("### " + Float.valueOf((((size*8)/1024)/1024)/seconds) + " Mb/ms" );
 		System.out.println("### " + Float.valueOf((jxtaPayload/tcpPayload)/100) + " % of efficiency" );
 	}
 }

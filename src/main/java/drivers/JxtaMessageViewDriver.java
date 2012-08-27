@@ -40,7 +40,7 @@ public class JxtaMessageViewDriver {
 
 	public static void main(String[] args) {
 		long t0,t1;
-		final String FILENAME = "/home/thiago/tmp/_/captura.pcap";
+		final String FILENAME = "/home/thiago/tmp/_/128_server.1000.1.256.pcap";
 		final StringBuilder errbuf = new StringBuilder();
 		t0 = System.currentTimeMillis();
 		final Pcap pcap = Pcap.openOffline(FILENAME, errbuf);

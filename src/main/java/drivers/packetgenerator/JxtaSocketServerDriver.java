@@ -1,4 +1,4 @@
-package drivers.packetgen;
+package drivers.packetgenerator;
 
 import java.io.DataInput;
 import java.io.DataInputStream;
