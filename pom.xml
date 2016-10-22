@@ -18,14 +18,15 @@
 		</plugins>
 	</build>
 	<dependencies>
+		<!-- https://mvnrepository.com/artifact/jnetpcap/jnetpcap -->
 		<dependency>
-			<groupId>org.jnetpcap</groupId>
+			<groupId>jnetpcap</groupId>
 			<artifactId>jnetpcap</artifactId>
-			<version>1.4.r1380</version>
+			<version>1.4.r1425-1f</version>
 		</dependency>
 		<dependency>
-			<artifactId>jxse</artifactId>
 			<groupId>com.kenai.jxse</groupId>
+			<artifactId>jxse</artifactId>			
 			<version>2.6</version>
 		</dependency>
 		<dependency>
